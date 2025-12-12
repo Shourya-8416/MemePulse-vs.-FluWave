@@ -96,7 +96,7 @@ def retry_with_exponential_backoff(
 # PERSISTENT CACHE LAYER
 # ============================================================================
 
-def save_cache_to_file(data: pd.DataFrame, cache_file: str = '.cache_trends.pkl'):
+def save_cache_to_file(data: pd.DataFrame, cache_file: str = 'cache_trends.pkl'):
     """Save data to a pickle file for persistent caching."""
     try:
         cache_data = {
@@ -109,7 +109,7 @@ def save_cache_to_file(data: pd.DataFrame, cache_file: str = '.cache_trends.pkl'
         pass  # Silently fail if can't save cache
 
 
-def load_cache_from_file(cache_file: str = '.cache_trends.pkl') -> tuple:
+def load_cache_from_file(cache_file: str = 'cache_trends.pkl') -> tuple:
     """Load data from pickle file. Returns (data, timestamp) or (None, None)."""
     try:
         if os.path.exists(cache_file):
