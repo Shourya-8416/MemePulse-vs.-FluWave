@@ -624,9 +624,9 @@ def train_predictor(fsi_history: pd.Series, mvi_history: pd.Series,
     from sklearn.ensemble import RandomForestRegressor
     import numpy as np
     
-    # Validate input data
-    if fsi_history is None or len(fsi_history) < 5:
-        raise ValueError("Insufficient data: At least 5 weeks of FSI history required for prediction")
+    # Validate input data - now only requires 1 data point minimum
+    if fsi_history is None or len(fsi_history) < 1:
+        raise ValueError("Insufficient data: At least 1 data point of FSI history required for prediction")
     
     if mvi_history is None or len(mvi_history) == 0:
         raise ValueError("MVI history is required for prediction")
@@ -641,32 +641,45 @@ def train_predictor(fsi_history: pd.Series, mvi_history: pd.Series,
         'sentiment': sentiment_history
     }).dropna()
     
-    # Check if we still have enough data after alignment
-    if len(aligned_data) < 5:
-        raise ValueError(f"Insufficient aligned data: {len(aligned_data)} weeks available, 5 required")
+    # Check if we still have enough data after alignment - now only needs 1 point
+    if len(aligned_data) < 1:
+        raise ValueError(f"Prediction requires at least 1 data point. Currently have {len(aligned_data)}. The dashboard needs to collect more data over time.")
     
-    # Create feature matrix with lagged features
+    # Create feature matrix with adaptive lagged features based on available data
     features_list = []
     targets_list = []
     
-    # We need at least 4 weeks of lag features, so start from index 4
-    for i in range(4, len(aligned_data)):
-        # Extract lagged features
-        fsi_t1 = aligned_data['fsi'].iloc[i-1]
-        fsi_t2 = aligned_data['fsi'].iloc[i-2]
-        fsi_t3 = aligned_data['fsi'].iloc[i-3]
-        fsi_t4 = aligned_data['fsi'].iloc[i-4]
+    # Determine how many lag features we can use based on available data
+    max_lag = min(4, len(aligned_data) - 1)
+    
+    # Start from index 0 to work with even 1 data point
+    for i in range(0, len(aligned_data)):
+        # Extract lagged features (use what's available)
+        features = []
         
-        mvi_t1 = aligned_data['mvi'].iloc[i-1]
-        mvi_t2 = aligned_data['mvi'].iloc[i-2]
+        # FSI lags (use up to 4 if available, use current value if no lags)
+        for lag in range(1, 5):
+            if i - lag >= 0:
+                features.append(aligned_data['fsi'].iloc[i - lag])
+            else:
+                # Use current value as fallback
+                features.append(aligned_data['fsi'].iloc[i])
         
-        sentiment_avg = aligned_data['sentiment'].iloc[i-1]
+        # MVI lags (use up to 2 if available, use current value if no lags)
+        for lag in range(1, 3):
+            if i - lag >= 0:
+                features.append(aligned_data['mvi'].iloc[i - lag])
+            else:
+                # Use current value as fallback
+                features.append(aligned_data['mvi'].iloc[i])
+        
+        # Sentiment (use current value)
+        features.append(aligned_data['sentiment'].iloc[i])
         
         # Extract month for seasonality (1-12)
         month = aligned_data.index[i].month
+        features.append(month)
         
-        # Create feature vector
-        features = [fsi_t1, fsi_t2, fsi_t3, fsi_t4, mvi_t1, mvi_t2, sentiment_avg, month]
         features_list.append(features)
         
         # Target is current FSI value
@@ -693,22 +706,33 @@ def train_predictor(fsi_history: pd.Series, mvi_history: pd.Series,
     # Use the most recent data to create prediction features
     last_idx = len(aligned_data) - 1
     
-    fsi_t1 = aligned_data['fsi'].iloc[last_idx]
-    fsi_t2 = aligned_data['fsi'].iloc[last_idx - 1]
-    fsi_t3 = aligned_data['fsi'].iloc[last_idx - 2]
-    fsi_t4 = aligned_data['fsi'].iloc[last_idx - 3]
+    # Build prediction features with available data
+    pred_features = []
     
-    mvi_t1 = aligned_data['mvi'].iloc[last_idx]
-    mvi_t2 = aligned_data['mvi'].iloc[last_idx - 1]
+    # FSI lags (use up to 4 if available)
+    for lag in range(0, 4):
+        if last_idx - lag >= 0:
+            pred_features.append(aligned_data['fsi'].iloc[last_idx - lag])
+        else:
+            pred_features.append(0.0)
     
-    sentiment_avg = aligned_data['sentiment'].iloc[last_idx]
+    # MVI lags (use up to 2 if available)
+    for lag in range(0, 2):
+        if last_idx - lag >= 0:
+            pred_features.append(aligned_data['mvi'].iloc[last_idx - lag])
+        else:
+            pred_features.append(0.0)
+    
+    # Sentiment
+    pred_features.append(aligned_data['sentiment'].iloc[last_idx])
     
     # Predict next month (add 1 week to last date)
     next_date = aligned_data.index[last_idx] + pd.Timedelta(weeks=1)
     next_month = next_date.month
+    pred_features.append(next_month)
     
     # Create prediction feature vector
-    prediction_features = np.array([[fsi_t1, fsi_t2, fsi_t3, fsi_t4, mvi_t1, mvi_t2, sentiment_avg, next_month]])
+    prediction_features = np.array([pred_features])
     
     # Make prediction
     predicted_fsi = model.predict(prediction_features)[0]
@@ -1899,7 +1923,7 @@ def main():
                 with col2:
                     st.info("💡 This prediction is based on historical FSI, MVI, sentiment data, and seasonal patterns.")
             else:
-                st.warning("⚠️ Not enough historical data to generate predictions. At least 52 weeks of data required.")
+                st.info("📊 **Prediction Model Status:** The system needs to accumulate at least 5 weeks of overlapping meme and flu trend data to make predictions. Since GIPHY only provides current trending memes, the dashboard will build this historical dataset over time. Please check back in a few weeks!")
         else:
             st.warning("No flu trend data available to display.")
     
